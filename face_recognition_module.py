@@ -4,11 +4,12 @@ import numpy as np
 from deepface import DeepFace
 import config
 import tensorflow as tf
-
+from retinaface import RetinaFace
 
 class FaceRecognitionSystem:
     """Class to handle face recognition operations for the attendance system."""
-
+    FACE_DETECTION_THRESHOLD = 0.9
+    
     def __init__(self):
         """Initialize the face recognition system."""
         self.model_name = config.MODEL_NAME
@@ -253,3 +254,55 @@ class FaceRecognitionSystem:
                 'message': f'Error: {str(e)}',
                 'face_count': 0
             }
+
+    # Face detection and recognition functions
+    def detect_faces(self,img):
+        try:
+            resp = RetinaFace.detect_faces(img, threshold=self.threshold)
+            return resp
+        except Exception as e:
+            print(f"Face detection error: {str(e)}")
+            return []
+
+    def recognize_face(self,img, employees):
+        try:
+            # First check if there's any face at all
+            faces = self.detect_faces(img)
+            if not faces:
+                return None, 0
+            
+            # Get the face with highest confidence
+            best_face = max(faces, key=lambda x: x.get('confidence', 0))
+            
+            if best_face['confidence'] < self.FACE_DETECTION_THRESHOLD:
+                return None, best_face['confidence']
+            
+            # If we have no employees, we can't recognize anyone
+            if not employees:
+                return None, best_face['confidence']
+            
+            # Try to recognize the face
+            result = DeepFace.find(
+                img_path=img,
+                db_path=self.db_path,
+                model_name=self.MODEL_NAME,
+                detector_backend=self.DETECTOR_BACKEND,
+                enforce_detection=False
+            )
+            
+            # Check if any match was found
+            if isinstance(result, list) and len(result) > 0 and len(result[0]) > 0:
+                # Get the closest match
+                closest_match = result[0].iloc[0]
+                employee_id = os.path.basename(closest_match['identity']).split('_')[0]
+                
+                # Verify this is a valid employee ID
+                for emp_id, emp_info in employees.items():
+                    if emp_id == employee_id:
+                        return emp_info, best_face['confidence']
+            
+            return None, best_face['confidence']
+        
+        except Exception as e:
+            print(f"Face recognition error: {str(e)}")
+            return None, 0

@@ -5,6 +5,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 import pytz
 import config
+import json
+import os
 
 class AttendanceManager:
     """Class to manage employee attendance records using Vietnamese time."""
@@ -289,3 +291,80 @@ class AttendanceManager:
         monthly_df.to_csv(report_path, index=False)
         
         return report_path
+
+    def record_attendance(self,employee_id, employee_name):
+        today = self.today_str
+        attendance_file = os.path.join(self.records_dir, f"{today}.csv")
+        
+        # Create or load attendance file for today
+        if os.path.exists(attendance_file):
+            attendance_df = pd.read_csv(attendance_file)
+        else:
+            attendance_df = pd.DataFrame(columns=["ID", "Name", "Time", "Status"])
+        
+        # Check if employee already has attendance for today
+        current_time = datetime.now(self.vietnam_tz).strftime("%H:%M:%S")
+        
+        # Determine check-in or check-out status based on existing records
+        if len(attendance_df[(attendance_df["ID"] == employee_id)]) % 2 == 0:
+            status = "Check-In"
+        else:
+            status = "Check-Out"
+        
+        # Add new attendance record
+        new_record = pd.DataFrame({
+            "ID": [employee_id],
+            "Name": [employee_name],
+            "Time": [current_time],
+            "Status": [status]
+        })
+        
+        attendance_df = pd.concat([attendance_df, new_record], ignore_index=True)
+        attendance_df.to_csv(attendance_file, index=False)
+        
+        return status, current_time
+# Load employee database
+    def load_employee_database(self):
+        employees = {}
+        database_file = os.path.join(self.records_dir, "employees.json")
+        if os.path.exists(database_file):
+            with open(database_file, "r") as f:
+                employees = json.load(f)
+        return employees
+
+    # Save employee database
+    def save_employee_database(self, employees):
+        database_file = os.path.join(self.records_dir, "employees.json")
+        with open(database_file, "w") as f:
+            json.dump(employees, f)
+
+    def view_employees(self):
+        employees = self.load_employee_database()
+        if not employees:
+            return "No employees registered in the system."
+        
+        employee_list = "Registered Employees:\n\n"
+        for emp_id, emp_info in employees.items():
+            employee_list += f"ID: {emp_id}, Name: {emp_info['name']}\n"
+        
+        return employee_list
+
+    def view_attendance(self):
+        today = datetime.now().strftime("%Y-%m-%d")
+        attendance_file = os.path.join(self.records_dir, f"{today}.csv")
+        
+        if not os.path.exists(attendance_file):
+            return "No attendance records for today."
+        
+        try:
+            attendance_df = pd.read_csv(attendance_file)
+            if len(attendance_df) == 0:
+                return "No attendance records for today."
+            
+            attendance_text = f"Attendance Records for {today}:\n\n"
+            for _, row in attendance_df.iterrows():
+                attendance_text += f"ID: {row['ID']}, Name: {row['Name']}, Time: {row['Time']}, Status: {row['Status']}\n"
+            
+            return attendance_text
+        except Exception as e:
+            return f"Error reading attendance records: {str(e)}"
